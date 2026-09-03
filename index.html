@@ -147,12 +147,12 @@
     <div class="card-title">Konfigurasi Provider</div>
     <div class="field">
       <label>Base URL</label>
-      <input type="url" id="baseUrl" placeholder="https://api.provider.com/v1">
+      <input type="url" id="baseUrl" placeholder="https://api.provider.com/v1" onchange="maybeDetectModels()">
     </div>
     <div class="field">
       <label>API Key</label>
       <div class="key-wrap">
-        <input type="password" id="apiKey" placeholder="sk-...">
+        <input type="password" id="apiKey" placeholder="sk-..." onchange="maybeDetectModels()">
         <button class="eye-btn" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password'">👁️</button>
       </div>
     </div>
@@ -161,9 +161,9 @@
       <span style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:var(--text-dim)">Tekan "UJI OTOMATIS" untuk deteksi</span>
     </div>
 
-    <button class="btn-main" id="mainBtn" onclick="runAutoTest()">
+    <button class="btn-main" id="mainBtn" onclick="runAutoTest()" disabled>
       <span id="btnIcon">⚡</span>
-      <span id="btnText">UJI OTOMATIS</span>
+      <span id="btnText">ISI KONFIGURASI</span>
       <div class="spin" id="btnSpin"></div>
     </button>
 
@@ -267,7 +267,14 @@ function renderLiveTests() {
 }
 
 function renderFinalResults() {
-  $('testListFinal').innerHTML = $('testList').innerHTML;
+  $('testListFinal').innerHTML = Object.values(S.results).map(r => `
+    <div class="trow ${r.status}">
+      <div class="ticon">${r.icon}</div>
+      <div class="tbody">
+        <div class="theader"><span class="tname">${esc(r.name)}</span><span class="badge badge-${r.status}">${esc(r.badge)}</span></div>
+        <div class="tdetail">${esc(r.detail)}</div>
+      </div>
+    </div>`).join('');
 }
 
 // ═══════════════════════════════════════════════
@@ -292,6 +299,30 @@ async function detectModels() {
   ).join('');
   setStatus('run', `${S.models.length} model ditemukan — ${S.model}`);
   setProgress(10);
+}
+
+async function maybeDetectModels() {
+  const inputUrl = $('baseUrl').value.trim();
+  const apiKey = $('apiKey').value.trim();
+  S.models = [];
+  S.model = '';
+  $('mainBtn').disabled = true;
+  $('btnText').textContent = inputUrl && apiKey ? 'MENDETEKSI MODEL...' : 'ISI KONFIGURASI';
+  if (!inputUrl || !apiKey) return;
+  let baseUrl;
+  try { baseUrl = validateEndpoint(inputUrl); } catch (e) { setStatus('err', e.message); return; }
+  S.baseUrl = baseUrl;
+  S.apiKey = apiKey;
+  try {
+    await detectModels();
+    setBtn('⚡', 'UJI OTOMATIS', false);
+    $('mainBtn').disabled = false;
+    setStatus('done', `${S.models.length} model ditemukan — pilih model lalu uji`);
+  } catch (e) {
+    setBtn('⚡', 'DETEKSI GAGAL', false);
+    $('mainBtn').disabled = true;
+    setStatus('err', `Deteksi gagal: ${e.message}. Provider mungkin tidak mengizinkan CORS.`);
+  }
 }
 
 // ─── TEST 1: Hidden Instruction ───────────────
@@ -677,31 +708,36 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 // ═══════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════
+function validateEndpoint(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('Base URL tidak valid'); }
+  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Base URL wajib HTTPS dan tanpa kredensial');
+  const host = url.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '0.0.0.0' || host === '::1' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) throw new Error('Alamat lokal/private tidak diizinkan');
+  return url.href.replace(/\/$/, '');
+}
+
 async function runAutoTest() {
   if (S.running) return;
 
-  const baseUrl = $('baseUrl').value.trim();
+  const baseUrl = validateEndpoint($('baseUrl').value.trim());
   const apiKey = $('apiKey').value.trim();
 
-  if (!baseUrl || !apiKey) { alert('Isi Base URL dan API Key.'); return; }
+  if (!baseUrl || !apiKey || !S.models.length || !S.model) { alert('Isi konfigurasi, tunggu deteksi model, lalu pilih model.'); return; }
 
   S.baseUrl = baseUrl;
   S.apiKey = apiKey;
   S.results = {};
   S.running = true;
-  S.models = [];
 
   $('results').style.display = 'none';
   $('liveTests').classList.remove('show');
   $('testList').innerHTML = '';
-  setBtn('', 'MENDETEKSI...', true);
-  setStatus('run', 'Menghubungi provider...');
-  setProgress(2);
+  setBtn('', 'MENJALANKAN TES...', true);
+  setStatus('run', `Menguji ${S.model}...`);
+  setProgress(10);
 
   try {
-    await detectModels();
-    setProgress(10);
-
     await testHiddenInstruction();
     await testStatisticalFingerprint();
     await testTokenDistribution();
