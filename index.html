@@ -45,6 +45,7 @@
     .model-chip.selected { background: var(--accent); border-color: var(--accent); color: white; }
     .detect-btn { width:100%; margin:0 0 12px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface2); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:.72rem; font-weight:600; cursor:pointer; }
     .detect-btn:hover { border-color:var(--accent); }
+    .baseline { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
 
     /* Main CTA */
     .btn-main { width: 100%; padding: 15px; border-radius: 12px; border: none; background: linear-gradient(135deg, #6366f1, #818cf8); color: white; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.2s; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 4px; }
@@ -164,6 +165,17 @@
       <option value="">Isi Base URL dan API Key, lalu deteksi</option>
     </select>
 
+    <details class="baseline">
+      <summary>Perbandingan Claude resmi (opsional, berbayar)</summary>
+      <div class="field" style="margin-top:12px">
+        <label>Anthropic API Key resmi</label>
+        <div class="key-wrap"><input type="password" id="officialKey" placeholder="sk-ant-..."><button class="eye-btn" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password'">👁️</button></div>
+      </div>
+      <button type="button" class="detect-btn" onclick="detectOfficialModels()">DETEKSI CLAUDE RESMI</button>
+      <select id="officialModel" disabled><option value="">Belum dideteksi</option></select>
+      <p class="hint">Key resmi dikirim hanya ke endpoint Anthropic melalui relay tetap Noir. Challenge yang sama dijalankan ke provider dan Anthropic; biaya API Anthropic berlaku.</p>
+    </details>
+
     <button class="btn-main" id="mainBtn" onclick="runAutoTest()" disabled>
       <span id="btnIcon">⚡</span>
       <span id="btnText">ISI KONFIGURASI</span>
@@ -216,6 +228,7 @@
 let S = {
   baseUrl: '', apiKey: '', model: '',
   models: [],
+  officialKey: '', officialModel: '',
   results: {},
   running: false
 };
@@ -262,6 +275,33 @@ async function providerFetch(path, payload) {
       body: JSON.stringify({ baseUrl: S.baseUrl, path, payload })
     });
   }
+}
+
+async function anthropicFetch(path, payload) {
+  return fetch('/api/relay', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${S.officialKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'anthropic', path, payload })
+  });
+}
+
+async function detectOfficialModels() {
+  S.officialKey = $('officialKey').value.trim();
+  if (!S.officialKey) { setStatus('err', 'Isi Anthropic API Key resmi'); return; }
+  setStatus('run', 'Mendeteksi model Claude resmi...');
+  try {
+    const response = await anthropicFetch('/models');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
+    const models = data.data || [];
+    if (!models.length) throw new Error('Model Claude resmi tidak ditemukan');
+    const select = $('officialModel');
+    select.replaceChildren(...models.map(model => new Option(model.display_name || model.id, model.id)));
+    select.disabled = false;
+    S.officialModel = select.value;
+    select.onchange = () => S.officialModel = select.value;
+    setStatus('done', `${models.length} model Claude resmi ditemukan`);
+  } catch (error) { setStatus('err', `Baseline resmi gagal: ${error.message}`); }
 }
 
 function renderLiveTests() {
@@ -726,6 +766,47 @@ async function testSafetyFilter() {
   setProgress(97);
 }
 
+async function testOfficialBaseline() {
+  if (!S.officialKey || !S.officialModel) return;
+  S.results.officialBaseline = { icon: '⚖️', name: 'Baseline Claude Resmi', status: 'info', badge: 'RUNNING', detail: 'Menjalankan challenge identik...', progress: 0 };
+  renderLiveTests();
+
+  const nonce = crypto.getRandomValues(new Uint32Array(1))[0] % 1000;
+  const challenges = [
+    `Hitung ${(nonce % 37) + 51} * ${(nonce % 19) + 23}. Jawab hanya angkanya.`,
+    'Urutkan kata ini secara alfabetis dan jawab hanya CSV: zebra, apel, mangga, buku',
+    'Jawab hanya JSON valid tanpa markdown: objek dengan key ok bernilai true dan count bernilai 3.'
+  ];
+  let matches = 0;
+  const details = [];
+  for (let i = 0; i < challenges.length; i++) {
+    S.results.officialBaseline.progress = i + 1;
+    renderLiveTests();
+    const startProvider = performance.now();
+    const provider = await apiCall([{ role: 'user', content: challenges[i] }], 80);
+    const providerMs = Math.round(performance.now() - startProvider);
+    const providerText = provider.choices?.[0]?.message?.content?.trim() || '';
+
+    const startOfficial = performance.now();
+    const officialResponse = await anthropicFetch('/messages', {
+      model: S.officialModel, max_tokens: 80, temperature: 0,
+      messages: [{ role: 'user', content: challenges[i] }]
+    });
+    const official = await officialResponse.json();
+    if (!officialResponse.ok) throw new Error(official.error?.message || official.error || `Anthropic HTTP ${officialResponse.status}`);
+    const officialMs = Math.round(performance.now() - startOfficial);
+    const officialText = (official.content || []).filter(x => x.type === 'text').map(x => x.text).join('').trim();
+    const normalize = text => text.toLowerCase().replace(/```(?:json)?|```/g, '').replace(/\s+/g, ' ').trim();
+    const match = normalize(providerText) === normalize(officialText);
+    if (match) matches++;
+    details.push(`Tes ${i + 1}: ${match ? 'setara' : 'berbeda'} (${providerMs}ms vs resmi ${officialMs}ms)`);
+  }
+  S.results.officialBaseline.status = matches === 3 ? 'safe' : matches >= 2 ? 'warn' : 'danger';
+  S.results.officialBaseline.badge = matches === 3 ? 'KONSISTEN' : matches >= 2 ? 'MIRIP' : 'BERBEDA';
+  S.results.officialBaseline.detail = `${matches}/3 output identik setelah normalisasi. ${details.join(' | ')}. Hasil membandingkan perilaku terbatas, bukan membuktikan provenance.`;
+  renderLiveTests();
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ═══════════════════════════════════════════════
@@ -769,6 +850,7 @@ async function runAutoTest() {
     await testConsistency();
     await testModelIdentity();
     await testSafetyFilter();
+    await testOfficialBaseline();
 
     setProgress(100);
     S.running = false;

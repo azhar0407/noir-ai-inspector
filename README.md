@@ -10,9 +10,13 @@ Alat publik berbasis browser untuk menguji indikator perilaku API model AI kompa
 - Hanya endpoint HTTPS yang didukung pada deployment publik. Gunakan key khusus dengan limit rendah.
 - Jangan gunakan kredensial produksi; buat key terpisah dengan limit rendah jika tersedia.
 
+## Mode baseline resmi
+
+Pengguna dapat memasukkan API key Anthropic resmi secara opsional. Noir mendeteksi model resmi, menjalankan tiga challenge acak yang sama ke provider dan Anthropic, lalu membandingkan output serta latency. Biaya API Anthropic berlaku. Key hanya berada di memori tab dan diteruskan oleh relay tetap ke `api.anthropic.com`.
+
 ## Batasan
 
-Tes black-box tidak dapat membuktikan identitas model atau menjamin provider bebas prompt injection. Provider dapat memalsukan metadata, mengubah prompt, mencatat permintaan, atau merutekan model secara dinamis. Hasil hanya indikator risiko.
+Tes black-box dan baseline resmi tidak dapat membuktikan identitas/provenance model atau menjamin provider bebas prompt injection. Provider dapat memalsukan metadata, mengubah prompt, mencatat permintaan, atau merutekan model secara dinamis. Hasil hanya indikator konsistensi perilaku.
 
 ## Jalankan lokal
 

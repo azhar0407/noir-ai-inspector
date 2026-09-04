@@ -1,4 +1,5 @@
-const ALLOWED_PATHS = new Set(['/models', '/chat/completions']);
+const OPENAI_PATHS = new Set(['/models', '/chat/completions']);
+const ANTHROPIC_PATHS = new Set(['/models', '/messages']);
 const MAX_BODY = 64 * 1024;
 
 function json(body, status = 200) {
@@ -34,12 +35,17 @@ export async function onRequestPost({ request }) {
 
   let input;
   try { input = await request.json(); } catch { return json({ error: 'JSON tidak valid' }, 400); }
-  if (!validTarget(input.baseUrl) || !ALLOWED_PATHS.has(input.path)) return json({ error: 'Target tidak diizinkan' }, 400);
+  const anthropic = input.mode === 'anthropic';
+  if (input.mode && !anthropic) return json({ error: 'Mode tidak diizinkan' }, 400);
+  const paths = anthropic ? ANTHROPIC_PATHS : OPENAI_PATHS;
+  if ((!anthropic && !validTarget(input.baseUrl)) || !paths.has(input.path)) return json({ error: 'Target tidak diizinkan' }, 400);
 
-  const target = `${input.baseUrl.replace(/\/$/, '')}${input.path}`;
+  const target = `${anthropic ? 'https://api.anthropic.com/v1' : input.baseUrl.replace(/\/$/, '')}${input.path}`;
   const init = {
     method: input.path === '/models' ? 'GET' : 'POST',
-    headers: { Authorization: authorization, Accept: 'application/json' },
+    headers: anthropic
+      ? { 'x-api-key': authorization.slice(7), 'anthropic-version': '2023-06-01', Accept: 'application/json' }
+      : { Authorization: authorization, Accept: 'application/json' },
     redirect: 'manual'
   };
   if (init.method === 'POST') {
