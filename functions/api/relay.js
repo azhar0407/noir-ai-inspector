@@ -40,7 +40,7 @@ export async function onRequestPost({ request }) {
   const init = {
     method: input.path === '/models' ? 'GET' : 'POST',
     headers: { Authorization: authorization, Accept: 'application/json' },
-    redirect: 'error'
+    redirect: 'manual'
   };
   if (init.method === 'POST') {
     init.headers['Content-Type'] = 'application/json';
@@ -59,7 +59,8 @@ export async function onRequestPost({ request }) {
         'Referrer-Policy': 'no-referrer'
       }
     });
-  } catch {
+  } catch (error) {
+    console.error('relay_fetch_failed', { host: new URL(target).hostname, name: error?.name, message: error?.message });
     return json({ error: 'Provider tidak dapat dijangkau' }, 502);
   }
 }
