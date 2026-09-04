@@ -43,6 +43,8 @@
     .model-chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text-dim); cursor: pointer; transition: all 0.2s; }
     .model-chip:hover { border-color: var(--accent); color: var(--text); }
     .model-chip.selected { background: var(--accent); border-color: var(--accent); color: white; }
+    .detect-btn { width:100%; margin:0 0 12px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface2); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:.72rem; font-weight:600; cursor:pointer; }
+    .detect-btn:hover { border-color:var(--accent); }
 
     /* Main CTA */
     .btn-main { width: 100%; padding: 15px; border-radius: 12px; border: none; background: linear-gradient(135deg, #6366f1, #818cf8); color: white; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.2s; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 4px; }
@@ -157,9 +159,10 @@
       </div>
     </div>
     <div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:var(--text-dim);margin-top:10px;margin-bottom:4px;">Model (auto-detect)</div>
-    <div class="model-chips" id="modelChips">
-      <span style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:var(--text-dim)">Tekan "UJI OTOMATIS" untuk deteksi</span>
-    </div>
+    <button type="button" class="detect-btn" id="detectBtn" onclick="maybeDetectModels()">DETEKSI MODEL TERSEDIA</button>
+    <select id="modelSelect" onchange="selectModel(this.value)" disabled>
+      <option value="">Isi Base URL dan API Key, lalu deteksi</option>
+    </select>
 
     <button class="btn-main" id="mainBtn" onclick="runAutoTest()" disabled>
       <span id="btnIcon">⚡</span>
@@ -293,10 +296,15 @@ async function detectModels() {
   S.models = data.data || [];
   if (!S.models.length) throw new Error('Tidak ada model ditemukan');
   S.model = S.models[0].id;
-  // Render chips
-  $('modelChips').innerHTML = S.models.map((m, i) =>
-    `<button type="button" class="model-chip${S.model===m.id?' selected':''}" onclick="selectModelByIndex(${i})">${esc(m.id)}</button>`
-  ).join('');
+  const select = $('modelSelect');
+  select.replaceChildren(...S.models.map(m => {
+    const option = document.createElement('option');
+    option.value = m.id;
+    option.textContent = m.id + (m.owned_by ? ` — ${m.owned_by}` : '');
+    return option;
+  }));
+  select.value = S.model;
+  select.disabled = false;
   setStatus('run', `${S.models.length} model ditemukan — ${S.model}`);
   setProgress(10);
 }
@@ -306,6 +314,8 @@ async function maybeDetectModels() {
   const apiKey = $('apiKey').value.trim();
   S.models = [];
   S.model = '';
+  $('modelSelect').disabled = true;
+  $('modelSelect').replaceChildren(new Option('Mendeteksi model...', ''));
   $('mainBtn').disabled = true;
   $('btnText').textContent = inputUrl && apiKey ? 'MENDETEKSI MODEL...' : 'ISI KONFIGURASI';
   if (!inputUrl || !apiKey) return;
@@ -321,6 +331,7 @@ async function maybeDetectModels() {
   } catch (e) {
     setBtn('⚡', 'DETEKSI GAGAL', false);
     $('mainBtn').disabled = true;
+    $('modelSelect').replaceChildren(new Option('Deteksi gagal', ''));
     setStatus('err', `Deteksi gagal: ${e.message}. Provider mungkin tidak mengizinkan CORS.`);
   }
 }
@@ -813,11 +824,9 @@ function renderVerdict() {
     `<div class="pchip"><div class="pchip-lbl">Tests Run</div><div class="pchip-val">${vals.length}/${TOTAL_STEPS}</div></div>`;
 }
 
-function selectModelByIndex(index) {
-  S.model = S.models[index]?.id || S.model;
-  $('modelChips').querySelectorAll('.model-chip').forEach(el => {
-    el.classList.toggle('selected', el.textContent === S.model);
-  });
+function selectModel(id) {
+  if (S.models.some(model => model.id === id)) S.model = id;
+  setStatus('done', `Model dipilih — ${S.model}`);
 }
 </script>
 </body>
