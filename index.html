@@ -171,7 +171,7 @@
     </button>
 
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-    <p class="hint">Privasi: API key hanya berada di memori tab dan dikirim langsung ke Base URL pilihan Anda. Tidak memakai cookie, analytics, penyimpanan browser, atau server Noir. Wajib HTTPS.</p>
+    <p class="hint">Privasi: API key hanya berada di memori tab. Jika provider memblokir CORS, request diteruskan sementara melalui Cloudflare Function Noir tanpa database, log aplikasi, cache, cookie, analytics, atau penyimpanan key. Provider dan infrastruktur Cloudflare tetap dapat memproses metadata/request. Gunakan key khusus berlimit rendah.</p>
   </div>
 
   <!-- STATUS -->
@@ -238,16 +238,30 @@ const setBtn = (icon, text, loading) => {
 };
 
 async function apiCall(messages, maxTokens = 150) {
-  const res = await fetch(`${S.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${S.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: S.model, messages, max_tokens: maxTokens, temperature: 0.3 })
-  });
+  const payload = { model: S.model, messages, max_tokens: maxTokens, temperature: 0.3 };
+  const res = await providerFetch('/chat/completions', payload);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`HTTP ${res.status}: ${err.error?.message || res.statusText}`);
+    throw new Error(`HTTP ${res.status}: ${err.error?.message || err.error || res.statusText}`);
   }
   return res.json();
+}
+
+async function providerFetch(path, payload) {
+  const direct = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${S.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  };
+  try {
+    return await fetch(`${S.baseUrl}${path}`, path === '/models' ? { headers: direct.headers } : direct);
+  } catch {
+    return fetch('/api/relay', {
+      method: 'POST',
+      headers: direct.headers,
+      body: JSON.stringify({ baseUrl: S.baseUrl, path, payload })
+    });
+  }
 }
 
 function renderLiveTests() {
@@ -288,9 +302,7 @@ const TOTAL_STEPS = 9;
 async function detectModels() {
   setStatus('run', 'Mendeteksi model...');
   setProgress(5);
-  const res = await fetch(`${S.baseUrl}/models`, {
-    headers: { 'Authorization': `Bearer ${S.apiKey}` }
-  });
+  const res = await providerFetch('/models');
   if (!res.ok) throw new Error(`HTTP ${res.status} saat akses /models`);
   const data = await res.json();
   S.models = data.data || [];
@@ -332,7 +344,7 @@ async function maybeDetectModels() {
     setBtn('⚡', 'DETEKSI GAGAL', false);
     $('mainBtn').disabled = true;
     $('modelSelect').replaceChildren(new Option('Deteksi gagal', ''));
-    setStatus('err', `Deteksi gagal: ${e.message}. Provider mungkin tidak mengizinkan CORS.`);
+    setStatus('err', `Deteksi gagal: ${e.message}`);
   }
 }
 

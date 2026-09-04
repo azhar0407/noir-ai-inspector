@@ -5,8 +5,9 @@ Alat publik berbasis browser untuk menguji indikator perilaku API model AI kompa
 ## Privasi
 
 - Tidak ada backend, database, analytics, cookie, atau penyimpanan browser.
-- API key hanya berada di memori tab dan dikirim langsung ke Base URL yang dimasukkan pengguna.
-- Hanya endpoint HTTPS yang didukung pada deployment publik.
+- API key hanya berada di memori tab. Browser mencoba request langsung ke provider.
+- Jika provider memblokir CORS, request diteruskan sementara oleh Cloudflare Function tanpa database, cache, analytics, atau logging aplikasi. Infrastruktur Cloudflare serta provider tetap memproses request.
+- Hanya endpoint HTTPS yang didukung pada deployment publik. Gunakan key khusus dengan limit rendah.
 - Jangan gunakan kredensial produksi; buat key terpisah dengan limit rendah jika tersedia.
 
 ## Batasan
